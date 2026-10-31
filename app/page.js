@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
+import Login from "./login";
 
 const CATEGORIES = [
   { name: "식비", icon: "🍚", color: "#e8743b" },
@@ -32,12 +33,22 @@ export default function Home() {
   const [date, setDate] = useState("");
   const [memo, setMemo] = useState("");
   const [error, setError] = useState("");
+  const [session, setSession] = useState(undefined);
+  const [scanning, setScanning] = useState(false);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     const iso = toIso(new Date());
     setToday(iso);
     setDate(iso);
 
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) return setExpenses([]);
     supabase
       .from("expenses")
       .select("id, amount, place, category, spent_on, memo")
@@ -47,7 +58,7 @@ export default function Home() {
         if (error) return setError("불러오기에 실패했어요.");
         setExpenses(data.map(({ spent_on, ...rest }) => ({ ...rest, date: spent_on })));
       });
-  }, []);
+  }, [session]);
 
   const month = today.slice(0, 7);
   const monthTotal = expenses
@@ -79,13 +90,70 @@ export default function Home() {
     setMemo("");
   };
 
+  const toJpeg = (file) =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
+        URL.revokeObjectURL(img.src);
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+
+  const scanReceipt = async (ev) => {
+    const file = ev.target.files[0];
+    ev.target.value = "";
+    if (!file) return;
+    setScanning(true);
+    setNotice("");
+    setError("");
+    try {
+      const res = await fetch("/api/receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ image: await toJpeg(file), mimeType: "image/jpeg" }),
+      });
+      const result = await res.json();
+      if (!res.ok) return setError(result.error || "영수증을 읽는 데 실패했어요.");
+      if (result.amount) setAmount(String(result.amount));
+      if (result.place) setPlace(result.place);
+      if (result.date) setDate(result.date);
+      const missing = [
+        !result.amount && "금액",
+        !result.place && "사용처",
+        !result.date && "날짜",
+      ].filter(Boolean);
+      setNotice(
+        missing.length
+          ? `${missing.join(", ")}은(는) 읽지 못했어요. 직접 입력해 주세요.`
+          : "영수증을 읽었어요. 내용을 확인하고 저장해 주세요."
+      );
+    } catch {
+      setError("영수증을 읽는 데 실패했어요.");
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const cat = (name) => CATEGORIES.find((c) => c.name === name);
+
+  if (session === undefined) return null;
+  if (!session) return <Login />;
 
   return (
     <main className="app">
       <header className="title">
         <span className="title-star">★</span> 수일이의 가계부 <span className="title-star">★</span>
       </header>
+      <button type="button" className="logout" onClick={() => supabase.auth.signOut()}>
+        로그아웃
+      </button>
 
       <section className="total">
         <p className="total-label">{month ? `${Number(month.slice(5))}월 총 지출` : "이번 달 총 지출"}</p>
@@ -97,6 +165,12 @@ export default function Home() {
 
       <form className="card" onSubmit={submit}>
         <h2 className="card-title">▶ 지출 입력</h2>
+
+        <label className="scan">
+          {scanning ? "영수증 읽는 중..." : "📷 영수증으로 채우기"}
+          <input type="file" accept="image/*" capture="environment" onChange={scanReceipt} disabled={scanning} hidden />
+        </label>
+        {notice && <p className="notice">{notice}</p>}
 
         <label className="field">
           <span>금액</span>

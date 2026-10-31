@@ -156,6 +156,40 @@ input:focus {
   transform: translate(4px, 4px);
 }
 
+.logout {
+  align-self: flex-end;
+  margin-top: -8px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 2px solid var(--ink);
+  cursor: pointer;
+}
+
+.submit:disabled {
+  opacity: 0.6;
+}
+
+.scan {
+  display: block;
+  text-align: center;
+  padding: 12px;
+  font-family: var(--font-title), sans-serif;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--mustard);
+  border: 3px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer;
+}
+
+.notice {
+  color: var(--teal);
+  font-size: 14px;
+}
+
 .error {
   color: #b3261e;
   font-size: 14px;
